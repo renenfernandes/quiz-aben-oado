@@ -1,0 +1,143 @@
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import SplashScreen from './components/SplashScreen';
+import QuestionDisplay from './components/QuestionDisplay';
+import ScoreScreen from './components/ScoreScreen';
+import { GameStatus, Question, UserAnswer } from './types';
+import { BIBLE_QUESTIONS } from './data/questions';
+import { manageBackgroundMusic } from './utils/audioUtils';
+
+// Shuffle questions for variety (Fisher-Yates shuffle)
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
+const App: React.FC = () => {
+  const [gameStatus, setGameStatus] = useState<GameStatus>(GameStatus.SplashScreen);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [userAnswers, setUserAnswers] = useState<UserAnswer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [animationKey, setAnimationKey] = useState(0); // For re-triggering question transition
+
+  const backgroundMusicRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    // Initialize questions (shuffled)
+    const shuffledQuestions = shuffleArray(BIBLE_QUESTIONS);
+    // For this demo, let's take first 10 questions to make it quicker to test.
+    // For the full 100 questions, use: setQuestions(shuffledQuestions);
+    setQuestions(shuffledQuestions.slice(0, Math.min(shuffledQuestions.length, 100))); 
+    setIsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (gameStatus === GameStatus.Playing) {
+      manageBackgroundMusic('play', backgroundMusicRef);
+    } else {
+      manageBackgroundMusic('pause', backgroundMusicRef);
+    }
+  }, [gameStatus]);
+
+
+  const startQuiz = useCallback(() => {
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setUserAnswers([]);
+    // Re-shuffle if desired, or use the already shuffled list
+    // setQuestions(shuffleArray(BIBLE_QUESTIONS).slice(0,10)); // Or full list
+    setGameStatus(GameStatus.Playing);
+    setAnimationKey(prev => prev + 1);
+  }, []);
+
+  const handleAnswer = useCallback((isCorrect: boolean, selectedAnswerText: string, correctAnswerText: string) => {
+    if (isCorrect) {
+      setScore(prevScore => prevScore + 1);
+    }
+    setUserAnswers(prevAnswers => [
+      ...prevAnswers,
+      {
+        questionId: questions[currentQuestionIndex].id,
+        selectedAnswer: selectedAnswerText,
+        isCorrect: isCorrect,
+        correctAnswer: correctAnswerText
+      }
+    ]);
+  }, [currentQuestionIndex, questions]);
+
+  const nextQuestion = useCallback(() => {
+    setAnimationKey(prev => prev + 1); // Trigger transition out animation for current question
+    
+    setTimeout(() => { // Wait for out-animation
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(prevIndex => prevIndex + 1);
+      } else {
+        setGameStatus(GameStatus.ScoreScreen);
+      }
+      setAnimationKey(prev => prev + 1); // Trigger transition in animation for next question/screen
+    }, 700); // Match animation duration
+  }, [currentQuestionIndex, questions.length]);
+
+
+  if (isLoading || questions.length === 0) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 text-white text-xl">
+        Carregando Quiz...
+      </div>
+    );
+  }
+
+  const renderContent = () => {
+    switch (gameStatus) {
+      case GameStatus.SplashScreen:
+        return <SplashScreen onStartQuiz={startQuiz} />;
+      case GameStatus.Playing:
+        return (
+          <div 
+            key={`question_container_${animationKey}`} 
+            className={`w-full min-h-screen flex items-center justify-center p-4 
+                        bg-gradient-to-tr from-indigo-800 via-purple-800 to-indigo-900
+                        bg-fixed transition-opacity duration-500`}
+            style={{ backgroundImage: "url('https://picsum.photos/seed/quizbg/1920/1080')" }} // General quiz background
+          >
+            <QuestionDisplay
+              key={questions[currentQuestionIndex].id} // Ensures component remounts for new question animations
+              question={questions[currentQuestionIndex]}
+              questionNumber={currentQuestionIndex + 1}
+              totalQuestions={questions.length}
+              onAnswer={handleAnswer}
+              onNextQuestion={nextQuestion}
+              isLastQuestion={currentQuestionIndex === questions.length - 1}
+            />
+          </div>
+        );
+      case GameStatus.ScoreScreen:
+        return (
+          <ScoreScreen
+            score={score}
+            totalQuestions={questions.length}
+            onRestartQuiz={startQuiz}
+            userAnswers={userAnswers}
+          />
+        );
+      default:
+        return <SplashScreen onStartQuiz={startQuiz} />;
+    }
+  };
+
+  return (
+    <div className="antialiased">
+      {/* Background music element - using placeholder, replace src with actual music file */}
+      <audio ref={backgroundMusicRef} src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" loop />
+      {renderContent()}
+    </div>
+  );
+};
+
+export default App;
